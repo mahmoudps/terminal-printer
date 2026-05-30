@@ -101,6 +101,20 @@ describe('PrintQueue', () => {
     await p1
   })
 
+  it('rejects a duplicate id while the first is still live', async () => {
+    const runner = async () => {
+      await delay(40)
+      return ok()
+    }
+    const q = new PrintQueue(config({ maxConcurrent: 1 }), runner)
+    const p1 = add(q, 'dup', 'p1') // starts printing immediately
+    const p2 = add(q, 'dup', 'p2') // same id while the first is live → rejected
+    const r2 = await p2
+    expect(r2.status).toBe('failed')
+    expect(r2.error).toMatch(/duplicate/i)
+    expect((await p1).status).toBe('printed')
+  })
+
   it('reports queue/history in snapshot', async () => {
     const runner = async () => ok()
     const q = new PrintQueue(config(), runner)

@@ -75,13 +75,35 @@ export class LocalServer {
 
   async stop(): Promise<void> {
     if (this.wss) {
+      // `wss.close()` on an external server only stops accepting new clients; it
+      // does NOT terminate upgraded sockets, and http `server.close()` waits for
+      // every open connection — so a single connected website would hang us here.
+      // Terminate the live clients first so the close callback can actually fire.
+      for (const client of this.wss.clients) {
+        try {
+          client.terminate()
+        } catch {
+          /* already gone */
+        }
+      }
       this.wss.close()
       this.wss = null
     }
     if (this.server) {
       const server = this.server
       this.server = null
-      await new Promise<void>((resolve) => server.close(() => resolve()))
+      server.closeAllConnections?.() // kill keep-alive + any straggler sockets (Node 18.2+)
+      await new Promise<void>((resolve) => {
+        let done = false
+        const finish = (): void => {
+          if (!done) {
+            done = true
+            resolve()
+          }
+        }
+        server.close(() => finish())
+        setTimeout(finish, 2000).unref?.() // never let shutdown block forever
+      })
     }
     this.boundPort = 0
   }

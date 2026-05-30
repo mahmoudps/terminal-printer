@@ -12,11 +12,18 @@ const log = scoped('ws')
 
 export function attachWebSocket(server: http.Server, deps: ServerDeps): WebSocketServer {
   const wss = new WebSocketServer({ server, path: WS_PATH, maxPayload: 30 * 1024 * 1024 })
+  // `ws` relays the http server's 'error' onto this instance; without a handler
+  // a stray error would be an unhandled 'error' event and crash the agent.
+  wss.on('error', (err) => log.error('websocket server error', String(err)))
   wss.on('connection', (ws, req) => {
     const origin = req.headers.origin
     log.info('connection from', origin ?? '(no origin)')
-    deps.registry.markConnected(origin)
-    ws.on('close', () => deps.registry.markDisconnected(origin))
+    // Only decrement on close if this socket was actually counted (not blocked),
+    // so the per-site online count can't drift negative or leak.
+    const counted = deps.registry.markConnected(origin)
+    ws.on('close', () => {
+      if (counted) deps.registry.markDisconnected(origin)
+    })
     send(ws, {
       kind: 'hello',
       name: app.getName(),

@@ -15,6 +15,9 @@ export const jobSourceSchema = z
     text: z.string().optional(),
     file: z.string().max(4096).optional(),
   })
+  // Keep unknown keys: the HMAC is verified over the *parsed* job, so it must
+  // retain exactly what the SDK signed (stripping a stray key breaks signing).
+  .passthrough()
   .refine((s) => [s.url, s.base64, s.text, s.file].filter((v) => v != null).length === 1, {
     message: 'source must contain exactly one of url, base64, text, or file',
   })
@@ -24,7 +27,7 @@ export const jobPrinterSchema = z.object({
   transport: z.enum(['queue', 'network']).optional(),
   host: z.string().max(256).optional(),
   port: z.number().int().min(1).max(65535).optional(),
-})
+}).passthrough()
 
 export const jobOptionsSchema = z.object({
   paperSize: z.string().max(32).optional(),
@@ -38,7 +41,7 @@ export const jobOptionsSchema = z.object({
   characterSet: z.string().max(64).optional(),
   toPdfFirst: z.boolean().optional(),
   width: z.number().int().min(1).max(256).optional(),
-})
+}).passthrough()
 
 export const jobMetaSchema = z.object({
   building: z.string().max(128).optional(),
@@ -47,7 +50,7 @@ export const jobMetaSchema = z.object({
   docType: z.string().max(64).optional(),
   docId: z.union([z.string().max(128), z.number()]).optional(),
   label: z.string().max(256).optional(),
-})
+}).passthrough()
 
 export const printJobSchema = z.object({
   v: z.number().int(),
@@ -63,7 +66,7 @@ export const printJobSchema = z.object({
   ts: z.number().int().optional(),
   nonce: z.string().max(128).optional(),
   signature: z.string().max(256).optional(),
-})
+}).passthrough()
 
 export type ParsedJobResult =
   | { ok: true; job: PrintJob }

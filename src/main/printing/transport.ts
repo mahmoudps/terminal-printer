@@ -20,7 +20,14 @@ export async function transportRaw(
     await sendTcp(job.printer.host, job.printer.port ?? 9100, bytes)
     return
   }
-  if (!printerName) throw new Error('raw/queue transport requires a printer name')
+  if (!printerName) {
+    // CUPS can target the default destination with no `-d`; winspool needs a name.
+    if (process.platform === 'win32') {
+      throw new Error('no printer selected and no default available for raw printing — set a default printer in Settings')
+    }
+    await lpPrintRaw(null, bytes)
+    return
+  }
   if (process.platform === 'win32') await rawSpool(printerName, bytes, log)
   else await lpPrintRaw(printerName, bytes)
 }

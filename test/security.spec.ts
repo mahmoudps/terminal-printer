@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { signJob, verifyJob, generateSecret } from '../src/main/security/hmac'
 import { NonceCache } from '../src/main/security/nonce'
+import { parsePrintJob } from '@shared/schema'
 import type { PrintJob } from '@shared/types'
 
 const baseJob: PrintJob = {
@@ -37,6 +38,29 @@ describe('hmac signing', () => {
 
   it('produces a 64-char hex secret', () => {
     expect(generateSecret()).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('verifies a parsed job that carried unknown keys (passthrough preserves signed bytes)', () => {
+    const secret = generateSecret()
+    // A client that signs a job with extra keys the agent does not model: the
+    // schema must keep them, or canonicalization (and thus the HMAC) diverges.
+    const raw = {
+      v: 1,
+      id: 'job-x',
+      type: 'pdf',
+      source: { url: 'https://example.com/r.pdf' },
+      options: { paperSize: 'A5', vendorFlag: 'xyz' },
+      extraTop: 'keep-me',
+      ts: 1_700_000_000_000,
+      nonce: 'n-x',
+    } as unknown as PrintJob
+    const signed = { ...raw, signature: signJob(raw, secret) }
+    const parsed = parsePrintJob(signed)
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) {
+      expect(verifyJob(parsed.job, secret)).toBe(true)
+      expect((parsed.job as unknown as { extraTop: string }).extraTop).toBe('keep-me')
+    }
   })
 })
 

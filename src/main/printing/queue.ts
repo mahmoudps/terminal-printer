@@ -67,6 +67,23 @@ export class PrintQueue extends EventEmitter {
   }
 
   add(input: AddInput): Promise<JobResult> {
+    // Reject a duplicate id while it's still live — overwriting the record would
+    // orphan the in-flight job's promise and hang whoever is awaiting it.
+    const dup = this.records.get(input.job.id)
+    if (dup) {
+      if (dup.state === 'queued' || dup.state === 'printing') {
+        return Promise.resolve({
+          v: PROTOCOL_VERSION,
+          id: input.job.id,
+          status: 'failed',
+          error: 'duplicate job id (already in queue)',
+          ts: Date.now(),
+        })
+      }
+      // A finished record with the same id: clear it so history stays consistent.
+      this.removeFromHistory(input.job.id)
+      this.records.delete(input.job.id)
+    }
     const max = Math.max(1, this.cfg().maxAttempts)
     let resolveFn!: (r: JobResult) => void
     const promise = new Promise<JobResult>((resolve) => (resolveFn = resolve))
@@ -95,6 +112,7 @@ export class PrintQueue extends EventEmitter {
   /** Re-add persisted jobs on launch (no caller awaits these). */
   restore(saved: QueueRecord[]): void {
     for (const r of saved) {
+      if (this.records.has(r.id)) continue // don't collide with a live job
       const rec: QueueRecord = { ...r, state: 'queued', noRetry: false, resolve: () => undefined }
       this.records.set(rec.id, rec)
       this.order.push(rec.id)

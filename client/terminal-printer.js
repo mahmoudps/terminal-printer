@@ -65,6 +65,7 @@
       this._printersWaiters = []
       this._listeners = new Map()
       this._connectPromise = null
+      this._pairPromise = null
       this._reconnectAttempt = 0
       this._stopped = false
 
@@ -186,7 +187,12 @@
           break
         case 'pair_required':
           this.paired = false
+          this._setSecret(null)
           this._emit('pair_required')
+          // Carries no job id, so fail every in-flight job with a retryable error
+          // — print()'s catch then re-pairs and resends instead of waiting out
+          // the full job timeout.
+          this._failAllPending('unpaired')
           break
         case 'printers':
           for (const w of this._printersWaiters.splice(0)) w.resolve(msg.printers)
@@ -223,10 +229,15 @@
 
     pair() {
       if (!this.connected) return Promise.reject(new Error('not connected'))
-      return new Promise((resolve, reject) => {
+      // Dedupe concurrent pair attempts so two in-flight prints don't double-pair.
+      if (this._pairPromise) return this._pairPromise
+      this._pairPromise = new Promise((resolve, reject) => {
         this._pairWaiters.push({ resolve, reject })
         this._send({ kind: 'pair', name: this.siteName })
+      }).finally(() => {
+        this._pairPromise = null
       })
+      return this._pairPromise
     }
 
     async _ensurePaired() {

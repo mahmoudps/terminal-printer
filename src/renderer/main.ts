@@ -299,6 +299,7 @@ async function saveCloud(): Promise<void> {
 let currentSites: WebsiteListItem[] = []
 let selectedSite: string | null = null
 let detailTab: 'files' | 'activity' = 'files'
+let detailToken = 0 // guards against out-of-order async detail renders
 
 function renderWebsitesList(sites: WebsiteListItem[]): void {
   currentSites = sites
@@ -339,7 +340,11 @@ function openSite(origin: string): void {
 }
 
 async function renderDetail(origin: string): Promise<void> {
+  const myToken = ++detailToken
   const d = await agent.getWebsiteDetail(origin)
+  // A newer render or a selection change superseded this fetch — bail before
+  // touching the DOM so a busy site's pushes don't flicker / reset the tab.
+  if (myToken !== detailToken || selectedSite !== origin) return
   const panel = $('siteDetail')
   if (!d) {
     panel.hidden = true

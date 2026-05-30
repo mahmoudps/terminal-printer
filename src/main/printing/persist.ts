@@ -51,6 +51,17 @@ export function schedulePersist(queued: QueueRecord[]): void {
   }, 250)
 }
 
+/** Write any pending debounced snapshot now (used on shutdown so queued jobs survive). */
+export async function flushQueuePersist(): Promise<void> {
+  if (timer) {
+    clearTimeout(timer)
+    timer = null
+  }
+  const q = pending
+  pending = null
+  if (q) await write(q)
+}
+
 export async function loadQueue(): Promise<QueueRecord[]> {
   try {
     const raw = await fs.readFile(file(), 'utf8')

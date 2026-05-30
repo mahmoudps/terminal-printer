@@ -1,10 +1,11 @@
+import { randomUUID } from 'node:crypto'
 import { app, shell, dialog, Notification } from 'electron'
 import { LOCAL_PORTS, PROTOCOL_VERSION } from '@shared/constants'
 import { IPC, type AgentStatus } from '@shared/ipc'
 import { initLogging, scoped, logEmitter } from './util/log'
 import { ConfigStore } from './config/store'
 import { PrintEngine } from './printing'
-import { schedulePersist, loadQueue } from './printing/persist'
+import { schedulePersist, loadQueue, flushQueuePersist } from './printing/persist'
 import { runTestPrint } from './printing/test-content'
 import { WebsiteRegistry } from './websites/registry'
 import { NonceCache } from './security/nonce'
@@ -60,14 +61,18 @@ async function bootstrap(): Promise<void> {
   const server = new LocalServer({ engine, registry, nonces, store })
   engine.onJobDone = (origin, job) => registry.recordJob(origin, job)
 
+  const sendToSettings = (channel: string, payload: unknown): void => {
+    const w = getSettingsWindow()
+    if (w && !w.isDestroyed() && !w.webContents.isDestroyed()) w.webContents.send(channel, payload)
+  }
   const broadcastStatus = (): void => {
-    getSettingsWindow()?.webContents.send(IPC.statusEvent, getStatus(store, server, cloud))
+    sendToSettings(IPC.statusEvent, getStatus(store, server, cloud))
   }
   const broadcastQueue = (): void => {
-    getSettingsWindow()?.webContents.send(IPC.queueEvent, engine.snapshot())
+    sendToSettings(IPC.queueEvent, engine.snapshot())
   }
   const broadcastWebsites = (): void => {
-    getSettingsWindow()?.webContents.send(IPC.websiteEvent, registry.list())
+    sendToSettings(IPC.websiteEvent, registry.list())
   }
 
   let sitesTimer: NodeJS.Timeout | null = null
@@ -100,7 +105,7 @@ async function bootstrap(): Promise<void> {
       logTimer = null
       const batch = logBatch
       logBatch = []
-      getSettingsWindow()?.webContents.send(IPC.logEvent, batch)
+      sendToSettings(IPC.logEvent, batch)
     }, 200)
   })
 
@@ -151,7 +156,7 @@ async function bootstrap(): Promise<void> {
           const res = await engine.enqueue(
             {
               v: PROTOCOL_VERSION,
-              id: `file-${Date.now()}`,
+              id: `file-${randomUUID()}`,
               type: ext === 'pdf' ? 'pdf' : 'image',
               source: { file },
               meta: { label: file },
@@ -205,10 +210,16 @@ async function bootstrap(): Promise<void> {
 }
 
 let isQuitting = false
+let cleanupStarted = false
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
+  // A tray agent should survive a stray async error, not die silently. Log and
+  // keep running; the real error sources are fixed at the source.
+  process.on('uncaughtException', (err) => log.error('uncaughtException:', err))
+  process.on('unhandledRejection', (reason) => log.error('unhandledRejection:', String(reason)))
+
   app.on('second-instance', () => {
     openSettingsWindow()
     notify('Terminal Printer is already running.')
@@ -223,9 +234,25 @@ if (!app.requestSingleInstanceLock()) {
     /* stay alive in the tray */
   })
 
-  app.on('before-quit', () => {
+  // Flush debounced state (queued jobs, website registry) before exiting so a
+  // quit that closely follows activity doesn't drop the last few writes.
+  app.on('before-quit', (e) => {
     isQuitting = true
-    void ctx?.server.stop()
-    void ctx?.cloud.stop()
+    if (cleanupStarted) return
+    cleanupStarted = true
+    e.preventDefault()
+    void (async () => {
+      try {
+        await Promise.allSettled([
+          ctx?.registry.flush(),
+          flushQueuePersist(),
+          ctx?.cloud.stop(),
+          ctx?.server.stop(),
+        ])
+      } catch {
+        /* best effort — exit regardless */
+      }
+      app.exit(0)
+    })()
   })
 }

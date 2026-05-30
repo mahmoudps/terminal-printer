@@ -75,19 +75,23 @@ export class WebsiteRegistry extends EventEmitter {
     return !!(origin && this.sites.get(origin)?.record.blocked)
   }
 
-  markConnected(origin: string | undefined): void {
-    if (!origin) return
+  /** Returns true if this connection was counted (so the matching close can decrement). */
+  markConnected(origin: string | undefined): boolean {
+    if (!origin) return false
     const rec = this.ensure(origin)
-    if (!rec) return
+    if (!rec) return false
     this.online.set(origin, (this.online.get(origin) ?? 0) + 1)
     const site = this.sites.get(origin)
     if (site) this.pushEvent(site, 'connected', 'WebSocket connected')
     this.changed()
+    return true
   }
 
   markDisconnected(origin: string | undefined): void {
     if (!origin) return
-    const n = (this.online.get(origin) ?? 1) - 1
+    const cur = this.online.get(origin)
+    if (cur == null) return // wasn't counted — don't drift negative
+    const n = cur - 1
     if (n <= 0) this.online.delete(origin)
     else this.online.set(origin, n)
     this.changed()
@@ -95,7 +99,9 @@ export class WebsiteRegistry extends EventEmitter {
 
   recordJob(origin: string | undefined, job: WebsiteJob): void {
     if (!origin) return
-    const site = this.sites.get(origin) ?? (this.ensure(origin), this.sites.get(origin))
+    // Only real, already-registered websites get history. Synthetic origins like
+    // 'cloud'/'desktop' are not websites and must not auto-create token entries.
+    const site = this.sites.get(origin)
     if (!site) return
     site.jobs.unshift(job)
     if (site.jobs.length > JOB_CAP) site.jobs.length = JOB_CAP
@@ -172,6 +178,15 @@ export class WebsiteRegistry extends EventEmitter {
   private pushEvent(site: SiteData, kind: WebsiteEventKind, message: string): void {
     site.events.push({ at: Date.now(), kind, message })
     if (site.events.length > EVENT_CAP) site.events.splice(0, site.events.length - EVENT_CAP)
+  }
+
+  /** Flush any pending debounced write immediately (used on shutdown). */
+  async flush(): Promise<void> {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer)
+      this.saveTimer = null
+    }
+    await this.persist()
   }
 
   private changed(): void {

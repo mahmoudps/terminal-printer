@@ -124,15 +124,24 @@ export class ConfigStore extends EventEmitter {
     return this.settings.pairings[origin]
   }
 
-  private async persist(): Promise<void> {
+  private persist(): Promise<void> {
     const snapshot = JSON.stringify(this.settings, null, 2)
-    // Serialize writes to avoid interleaving.
-    this.queue = this.queue.then(async () => {
-      const tmp = this.file + '.tmp'
-      await fs.writeFile(tmp, snapshot, 'utf8')
-      await fs.rename(tmp, this.file)
-    })
-    return this.queue
+    // Serialize writes to avoid interleaving. Run the next write whether or not
+    // the previous one rejected, and keep `this.queue` resolved — otherwise a
+    // single transient write failure would poison the chain and silently drop
+    // every future config write.
+    const run = this.queue.then(
+      () => this.writeFile(snapshot),
+      () => this.writeFile(snapshot),
+    )
+    this.queue = run.catch(() => undefined)
+    return run // callers still see *this* write's success/failure
+  }
+
+  private async writeFile(snapshot: string): Promise<void> {
+    const tmp = this.file + '.tmp'
+    await fs.writeFile(tmp, snapshot, 'utf8')
+    await fs.rename(tmp, this.file)
   }
 }
 

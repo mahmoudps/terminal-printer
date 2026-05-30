@@ -117,7 +117,14 @@ function readJson(req: http.IncomingMessage): Promise<any> {
 }
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
-  const payload = JSON.stringify(body)
-  res.writeHead(status, { 'Content-Type': 'application/json' })
-  res.end(payload)
+  // The error path can reach here after the socket was destroyed (e.g. an
+  // oversized body); writing then throws. Bail if the response is already done.
+  if (res.writableEnded || res.destroyed) return
+  try {
+    const payload = JSON.stringify(body)
+    res.writeHead(status, { 'Content-Type': 'application/json' })
+    res.end(payload)
+  } catch {
+    /* socket went away mid-write */
+  }
 }

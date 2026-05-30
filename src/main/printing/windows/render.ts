@@ -62,7 +62,15 @@ export function toPageSize(paper?: string): any {
   if (!paper) return 'A4'
   const named = ['A3', 'A4', 'A5', 'Legal', 'Letter', 'Tabloid']
   if (named.includes(paper)) return paper
-  const mm = /^(\d+)mm$/.exec(paper)
-  if (mm) return { width: parseInt(mm[1], 10) * 1000, height: 297 * 1000 }
+  // Explicit width×height (e.g. "80x200mm") — exact control over the page.
+  const wh = /^(\d+)x(\d+)mm$/i.exec(paper)
+  if (wh) return { width: parseInt(wh[1], 10) * 1000, height: parseInt(wh[2], 10) * 1000 }
+  // Width-only roll spec (e.g. "80mm"): pick a proportional receipt-page height
+  // instead of forcing A4's 297mm. Use "WxHmm" above if you need an exact length.
+  const mm = /^(\d+)mm$/i.exec(paper)
+  if (mm) {
+    const w = parseInt(mm[1], 10)
+    return { width: w * 1000, height: Math.round(w * 3.5) * 1000 }
+  }
   return 'A4'
 }

@@ -46,6 +46,7 @@ export class CloudClient {
   private heartbeatTimer: NodeJS.Timeout | null = null
   private state: CloudState = { state: 'disabled' }
   private readonly outbox = new Outbox()
+  private readonly seenJobs = new Set<string>() // dedupe redelivered cloud jobs
 
   constructor(
     private readonly store: ConfigStore,
@@ -98,6 +99,17 @@ export class CloudClient {
   }
 
   private connect(cfg: CloudSettings): void {
+    // Tear down any previous socket so a reconnect never leaves two live sockets
+    // (with duplicate timers + duplicate job delivery) running in parallel.
+    if (this.ws) {
+      this.ws.removeAllListeners()
+      try {
+        this.ws.close()
+      } catch {
+        /* ignore */
+      }
+      this.ws = null
+    }
     this.setState({ state: 'connecting' })
     const scheme = cfg.reverbScheme === 'https' ? 'wss' : 'ws'
     const port = cfg.reverbPort ?? (cfg.reverbScheme === 'https' ? 443 : 80)
@@ -109,12 +121,18 @@ export class CloudClient {
     const ws = new WebSocket(url)
     this.ws = ws
 
-    ws.on('message', (raw) => this.onFrame(cfg, raw.toString()))
+    // Guard every handler against a stale socket (one we already replaced).
+    ws.on('message', (raw) => {
+      if (ws !== this.ws) return
+      this.onFrame(cfg, raw.toString())
+    })
     ws.on('error', (err) => {
+      if (ws !== this.ws) return
       log.error('socket error', String(err))
       this.setState({ state: 'error', detail: String(err) })
     })
     ws.on('close', () => {
+      if (ws !== this.ws) return
       if (this.stopped) return
       this.setState({ state: 'disconnected' })
       this.scheduleReconnect(cfg)
@@ -152,7 +170,7 @@ export class CloudClient {
         log.info('subscribed to', frame.channel)
         break
       case 'print-job.queued':
-        void this.onJob(cfg, data as CloudJobEvent)
+        void this.onJob(cfg, data as CloudJobEvent).catch((err) => log.error('onJob failed', String(err)))
         break
       default:
         break
@@ -183,6 +201,16 @@ export class CloudClient {
 
   private async onJob(cfg: CloudSettings, ev: CloudJobEvent): Promise<void> {
     if (!ev?.id) return
+    // Reverb is at-least-once: a reconnect can redeliver the same event. Dedupe
+    // so we never physically print one job twice.
+    if (this.seenJobs.has(ev.id)) {
+      log.warn(`duplicate cloud job ${ev.id} ignored`)
+      return
+    }
+    this.seenJobs.add(ev.id)
+    if (this.seenJobs.size > 500) {
+      for (const id of [...this.seenJobs].slice(0, this.seenJobs.size - 250)) this.seenJobs.delete(id)
+    }
     log.info(`cloud job ${ev.id} (${ev.format})`)
     const job: PrintJob = {
       v: PROTOCOL_VERSION,
@@ -195,7 +223,14 @@ export class CloudClient {
       meta: { building: cfg.building ?? undefined, terminal: cfg.terminal ?? undefined, docType: ev.document_type },
     }
 
-    const statusUrl = ev.status_url ? this.absolute(cfg, ev.status_url) : null
+    let statusUrl: string | null = null
+    if (ev.status_url) {
+      try {
+        statusUrl = this.absolute(cfg, ev.status_url)
+      } catch {
+        log.warn(`ignoring invalid status_url for job ${ev.id}`)
+      }
+    }
     if (statusUrl) await this.report(cfg, statusUrl, ev.id, { status: 'printing' })
 
     const result = await this.engine.enqueue(job, 'cloud')
@@ -288,18 +323,22 @@ export class CloudClient {
   }
 
   private clearTimers(): void {
-    for (const t of [this.pingTimer, this.heartbeatTimer, this.reconnectTimer]) {
-      if (t) clearInterval(t as NodeJS.Timeout)
-    }
+    if (this.pingTimer) clearInterval(this.pingTimer)
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer) // setTimeout, not setInterval
     this.pingTimer = this.heartbeatTimer = this.reconnectTimer = null
   }
 
   private scheduleReconnect(cfg: CloudSettings): void {
     if (this.stopped) return
+    if (this.reconnectTimer) return // already scheduled — don't stack reconnect chains
     this.attempt++
     const delay = Math.min(CLOUD_BACKOFF_MAX_MS, 1000 * 2 ** Math.min(this.attempt, 5))
     log.info(`reconnecting in ${delay}ms (attempt ${this.attempt})`)
-    this.reconnectTimer = setTimeout(() => this.connect(cfg), delay)
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      this.connect(cfg)
+    }, delay)
   }
 
   private setState(s: CloudState): void {
