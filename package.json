@@ -1,0 +1,60 @@
+{
+  "name": "terminal-printer",
+  "productName": "Terminal Printer",
+  "version": "0.1.0",
+  "description": "Silent local print agent — receives print jobs over WebSocket/HTTP (or a cloud relay) and prints them directly to OS printers, bypassing the browser print dialog. Windows, macOS, Linux.",
+  "author": "mahmoudps <m@atyaf.co>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mahmoudps/terminal-printer.git"
+  },
+  "homepage": "https://github.com/mahmoudps/terminal-printer#readme",
+  "bugs": "https://github.com/mahmoudps/terminal-printer/issues",
+  "keywords": [
+    "printing",
+    "printer",
+    "silent-printing",
+    "escpos",
+    "thermal-printer",
+    "receipt",
+    "pos",
+    "pdf",
+    "label",
+    "zpl",
+    "electron",
+    "websocket",
+    "print-agent"
+  ],
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dist": "electron-vite build && electron-builder",
+    "dist:win": "electron-vite build && electron-builder --win nsis",
+    "dist:mac": "electron-vite build && electron-builder --mac",
+    "dist:linux": "electron-vite build && electron-builder --linux"
+  },
+  "dependencies": {
+    "electron-log": "^5.2.4",
+    "node-thermal-printer": "^4.4.4",
+    "pdf-to-printer": "^5.6.0",
+    "ws": "^8.18.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/ws": "^8.5.13",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.7.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Terminal Printer — SDK demo</title>
+    <style>
+      body { font: 15px/1.6 system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; color: #1b1f24; }
+      h1 { font-size: 22px; }
+      .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 14px 0; }
+      button { font: inherit; padding: 9px 16px; border: 1px solid #d0d4da; border-radius: 9px; background: #fff; cursor: pointer; }
+      button.primary { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+      button:disabled { opacity: .5; cursor: default; }
+      .pill { padding: 3px 10px; border-radius: 999px; font-size: 13px; background: #eef0f3; color: #555; }
+      .pill.ok { background: #dcfce7; color: #166534; }
+      .pill.bad { background: #fee2e2; color: #991b1b; }
+      input { font: inherit; padding: 8px 10px; border: 1px solid #d0d4da; border-radius: 9px; }
+      #log { background: #0b1020; color: #cdd6f4; padding: 14px; border-radius: 10px; height: 260px; overflow: auto; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+      .muted { color: #6b7280; font-size: 13px; }
+      code { background: #eef0f3; padding: 1px 6px; border-radius: 5px; }
+    </style>
+  </head>
+  <body>
+    <h1>Terminal Printer — SDK demo</h1>
+    <p class="muted">Serve this folder over HTTP (e.g. <code>npx http-server -p 9999</code>) and open it, so the page has a real
+      origin the agent can pair. Make sure the agent is running.</p>
+
+    <div class="bar">
+      <button id="connect" class="primary">Connect</button>
+      <button id="pair">Pair</button>
+      <button id="printers">List printers</button>
+      <span id="state" class="pill">disconnected</span>
+      <span id="agent" class="muted"></span>
+    </div>
+
+    <div class="bar">
+      <label>Printer override: <input id="printer" placeholder="(blank = default)" size="26" /></label>
+    </div>
+
+    <div class="bar">
+      <button data-job="html">Print HTML receipt</button>
+      <button data-job="pdf">Print PDF (URL)</button>
+      <button data-job="escpos">Print ESC/POS</button>
+      <button data-job="raw">Print ZPL label</button>
+      <button data-job="website">Print website</button>
+    </div>
+
+    <div id="log"></div>
+
+    <script src="./terminal-printer.js"></script>
+    <script>
+      const tp = new TerminalPrinter({ siteName: 'SDK demo' }) // auto-connects
+      const logEl = document.getElementById('log')
+      const stateEl = document.getElementById('state')
+      const log = (m, cls = '') => {
+        const line = document.createElement('div')
+        if (cls) line.style.color = cls === 'ok' ? '#a6e3a1' : cls === 'bad' ? '#f38ba8' : ''
+        line.textContent = `${new Date().toLocaleTimeString()}  ${m}`
+        logEl.append(line)
+        logEl.scrollTop = logEl.scrollHeight
+      }
+      const setState = () => {
+        stateEl.textContent = tp.available ? 'ready' : tp.connected ? 'connected (unpaired)' : 'disconnected'
+        stateEl.className = 'pill ' + (tp.available ? 'ok' : tp.connected ? '' : 'bad')
+        document.getElementById('agent').textContent = tp.agentInfo ? `${tp.agentInfo.name} v${tp.agentInfo.version}` : ''
+      }
+
+      tp.on('open', () => { log('connected'); setState() })
+      tp.on('close', () => { log('disconnected', 'bad'); setState() })
+      tp.on('pair_required', () => log('pairing required — click "Pair"'))
+      tp.on('status', (s) => log(`status ${s.id}: ${s.status}`))
+      tp.on('error', (e) => log('error: ' + e.message, 'bad'))
+
+      const printerOverride = () => {
+        const v = document.getElementById('printer').value.trim()
+        return v ? { printer: { name: v } } : {}
+      }
+
+      document.getElementById('connect').onclick = async () => {
+        try { await tp.connect(); setState() } catch (e) { log(e.message, 'bad') }
+      }
+      document.getElementById('pair').onclick = async () => {
+        try { await tp.pair(); log('paired ✓', 'ok'); setState() } catch (e) { log(e.message, 'bad') }
+      }
+      document.getElementById('printers').onclick = async () => {
+        try { const list = await tp.listPrinters(); log('printers: ' + list.map((p) => p.name).join(', ')) }
+        catch (e) { log(e.message, 'bad') }
+      }
+
+      const RECEIPT_HTML = `<!doctype html><html dir="rtl" lang="ar"><body style="font-family:sans-serif;padding:16px">
+        <h2>إيصال — Receipt</h2><p>#TP-1001 · 1,250.00</p><hr><p>شكراً لك</p></body></html>`
+
+      const jobs = {
+        html: () => tp.printHtml(RECEIPT_HTML, { options: { paperSize: 'A5' }, ...printerOverride() }),
+        pdf: () => tp.printPdf('https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf', { options: { paperSize: 'A4' }, ...printerOverride() }),
+        escpos: () => tp.printEscpos('TEST RECEIPT\nTotal      12.00\n\nThank you!', { options: { paperSize: '80mm', cut: true }, ...printerOverride() }),
+        raw: () => tp.printZpl('^XA^CF0,60^FO50,50^FDTEST^FS^XZ', printerOverride()),
+        website: () => tp.printWebsite('https://example.com', { options: { paperSize: 'A4' }, ...printerOverride() }),
+      }
+
+      for (const btn of document.querySelectorAll('[data-job]')) {
+        btn.onclick = async () => {
+          btn.disabled = true
+          try {
+            const r = await jobs[btn.dataset.job]()
+            log(`printed ✓ (${r.printer || 'default'}, ${r.durationMs}ms)`, 'ok')
+          } catch (e) {
+            log('print failed: ' + e.message, 'bad')
+          } finally {
+            btn.disabled = false
+            setState()
+          }
+        }
+      }
+    </script>
+  </body>
+</html>

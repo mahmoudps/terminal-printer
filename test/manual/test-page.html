@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Terminal Printer — test page</title>
+    <style>
+      body { font: 14px/1.5 system-ui, sans-serif; max-width: 720px; margin: 32px auto; padding: 0 16px; color: #1b1f24; }
+      h1 { font-size: 20px; }
+      button { font: inherit; padding: 8px 14px; border: 1px solid #d0d4da; border-radius: 8px; background: #fff; cursor: pointer; }
+      button.primary { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+      input { font: inherit; padding: 8px; border: 1px solid #d0d4da; border-radius: 8px; }
+      #log { background: #0b1020; color: #cdd6f4; padding: 12px; border-radius: 8px; height: 280px; overflow: auto; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12.5px; }
+      .pill { padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #eee; }
+      .ok { background: #dcfce7; color: #166534; } .bad { background: #fee2e2; color: #991b1b; }
+    </style>
+  </head>
+  <body>
+    <h1>Terminal Printer — test page</h1>
+    <p>Serve this over HTTP (e.g. <code>npx http-server</code> or <code>python -m http.server 9999</code>) and open it,
+      so the agent sees a real Origin. Make sure the agent is running.</p>
+
+    <div class="row">
+      <button id="connect" class="primary">Connect</button>
+      <button id="pair">Pair (approve in tray)</button>
+      <span id="state" class="pill">disconnected</span>
+    </div>
+
+    <div class="row">
+      <label>Printer (optional): <input id="printer" placeholder="leave blank for mapped/default" size="28" /></label>
+    </div>
+
+    <div class="row">
+      <button data-job="html">Print HTML receipt</button>
+      <button data-job="pdf">Print PDF (from URL)</button>
+      <button data-job="escpos">Print ESC/POS</button>
+      <button data-job="raw">Print ZPL label</button>
+    </div>
+
+    <div id="log"></div>
+
+    <script type="module">
+      const PORT = 9120
+      let ws = null
+      let secret = localStorage.getItem('tp-secret') || null
+      const logEl = document.getElementById('log')
+      const stateEl = document.getElementById('state')
+      const log = (m, cls = '') => {
+        const line = document.createElement('div')
+        if (cls) line.className = cls
+        line.textContent = `${new Date().toLocaleTimeString()}  ${m}`
+        logEl.append(line)
+        logEl.scrollTop = logEl.scrollHeight
+      }
+      const setState = (s, cls = '') => { stateEl.textContent = s; stateEl.className = 'pill ' + cls }
+
+      // --- canonicalization + signing (must match the agent) ---
+      const sortDeep = (v) => {
+        if (v === null || typeof v !== 'object') return v
+        if (Array.isArray(v)) return v.map(sortDeep)
+        const o = {}
+        for (const k of Object.keys(v).sort()) { if (v[k] === undefined) continue; o[k] = sortDeep(v[k]) }
+        return o
+      }
+      const stableStringify = (v) => JSON.stringify(sortDeep(v))
+      async function sign(job, secretHex) {
+        const enc = new TextEncoder()
+        const key = await crypto.subtle.importKey('raw', enc.encode(secretHex), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+        const { signature, ...rest } = job
+        const sig = await crypto.subtle.sign('HMAC', key, enc.encode(stableStringify(rest)))
+        return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('')
+      }
+
+      function connect() {
+        ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`)
+        ws.onopen = () => { setState('connected', 'ok'); log('WebSocket open') }
+        ws.onclose = () => setState('disconnected', 'bad')
+        ws.onerror = () => log('WebSocket error — is the agent running?', 'bad')
+        ws.onmessage = (e) => {
+          const m = JSON.parse(e.data)
+          if (m.kind === 'hello') log(`hello: ${m.name} v${m.version} (paired=${m.paired})`)
+          else if (m.kind === 'paired') { secret = m.secret; localStorage.setItem('tp-secret', secret); log('paired ✓ secret stored', 'ok') }
+          else if (m.kind === 'pair_denied') log('pairing denied', 'bad')
+          else if (m.kind === 'pair_required') log('pairing required — click "Pair"', 'bad')
+          else if (m.kind === 'ack') log(`ack ${m.id}: ${m.status}`)
+          else if (m.kind === 'result') log(`result ${m.id}: ${m.status}${m.error ? ' — ' + m.error : ''}`, m.status === 'printed' ? 'ok' : 'bad')
+          else if (m.kind === 'error') log(`error: ${m.error}`, 'bad')
+          else log(JSON.stringify(m))
+        }
+      }
+
+      async function sendJob(partial) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return log('not connected', 'bad')
+        if (!secret) return log('not paired — click "Pair" first', 'bad')
+        const printer = document.getElementById('printer').value.trim()
+        const job = {
+          v: 1,
+          id: 'tp-' + crypto.randomUUID(),
+          ts: Date.now(),
+          nonce: crypto.randomUUID(),
+          printer: printer ? { name: printer } : undefined,
+          ...partial,
+        }
+        job.signature = await sign(job, secret)
+        ws.send(JSON.stringify({ kind: 'job', job }))
+        log(`sent ${job.type} job ${job.id}`)
+      }
+
+      const RECEIPT_HTML = `<!doctype html><html dir="rtl" lang="ar"><body style="font-family:sans-serif;padding:16px">
+        <h2>إيصال دفع — Test</h2><p>Receipt #TP-1001</p><p>المبلغ: 1,250.00</p><hr><p>شكراً</p></body></html>`
+
+      document.getElementById('connect').onclick = connect
+      document.getElementById('pair').onclick = () => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return log('connect first', 'bad')
+        ws.send(JSON.stringify({ kind: 'pair', name: 'Test page' }))
+        log('pairing requested — approve in the tray dialog')
+      }
+      for (const btn of document.querySelectorAll('[data-job]')) {
+        btn.onclick = () => {
+          const kind = btn.dataset.job
+          if (kind === 'html') sendJob({ type: 'html', source: { text: RECEIPT_HTML }, options: { paperSize: 'A5' } })
+          if (kind === 'pdf') sendJob({ type: 'pdf', source: { url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' }, options: { paperSize: 'A4' } })
+          if (kind === 'escpos') sendJob({ type: 'escpos', source: { text: 'TEST RECEIPT\nTotal      12.00\n\nThank you!' }, options: { paperSize: '80mm', cut: true } })
+          if (kind === 'raw') sendJob({ type: 'raw', source: { text: '^XA^CF0,60^FO50,50^FDTEST^FS^XZ' } })
+        }
+      }
+    </script>
+  </body>
+</html>
