@@ -1,9 +1,8 @@
 name: release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # Run from the Actions tab (or `gh workflow run release.yml`) to build and
+  # publish macOS + Linux + Windows artifacts to the matching GitHub Release.
   workflow_dispatch:
 
 permissions:

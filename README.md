@@ -52,8 +52,10 @@ npm run dist:linux   # Linux    → dist/*.AppImage + *.deb  (run on Linux)
 npm run dist         # current OS
 ```
 
-Each platform builds on its own OS; CI ([`.github/workflows/release.yml`](.github/workflows/release.yml))
-builds **Windows + macOS + Linux** and publishes them to a GitHub Release on every `v*` tag.
+Each platform builds on its own OS. The CI workflow
+([`.github/workflows/release.yml`](.github/workflows/release.yml)) builds
+**Windows + macOS + Linux** on GitHub's runners and publishes them to a Release —
+run it from the **Actions** tab or with `gh workflow run release.yml`.
 
 ## Configuration
 
