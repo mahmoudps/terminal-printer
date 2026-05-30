@@ -1,7 +1,7 @@
 {
   "name": "terminal-printer",
   "productName": "Terminal Printer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Silent local print agent — receives print jobs over WebSocket/HTTP (or a cloud relay) and prints them directly to OS printers, bypassing the browser print dialog. Windows, macOS, Linux.",
   "author": "mahmoudps <m@atyaf.co>",
   "license": "MIT",
