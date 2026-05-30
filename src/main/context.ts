@@ -15,6 +15,7 @@ export interface AppContext {
   registry: WebsiteRegistry
 
   restartServer(): Promise<void>
+  stopServer(): Promise<void>
   broadcastStatus(): void
   getStatus(): AgentStatus
   refreshTray(): void

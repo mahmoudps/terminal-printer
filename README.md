@@ -72,6 +72,22 @@ agent runs **to the tray on login** (when enabled), warns if you launch a second
 copy, and surfaces a clear error — tray + Windows notification — if the local
 server can't bind a port.
 
+## Running it like a service
+
+The agent is a **tray-resident background service**: enable *Start on login* and
+it launches hidden to the tray on every boot and keeps serving. Control it from
+the tray menu **or** the Settings window:
+
+- **Pause / Resume** — keep serving and queueing, but hold all printing.
+- **Stop / Start serving** — unbind (or re-bind) the local WebSocket/HTTP port
+  without quitting; the agent stays in the tray.
+- **Quit** — full shutdown (flushes the queue + website state first).
+
+> It runs as a **per-user tray agent**, not a Windows session-0 service, because
+> the `html` / `website` / `image` drivers render in a hidden Chromium window and
+> need a desktop GUI session. Auto-start-on-login + start/stop/pause gives the
+> same always-on, controllable behavior.
+
 ## Queue
 
 Every job flows through an observable queue, shown live in Settings → **Queues**:

@@ -127,6 +127,16 @@ function bindControls(): void {
     await agent.restartServer()
     toast('Server restarted')
   })
+  $('toggleServer').addEventListener('click', async () => {
+    const st = await agent.getStatus()
+    if (st.serverRunning) {
+      await agent.stopServer()
+      toast('Server stopped')
+    } else {
+      await agent.restartServer()
+      toast('Server started')
+    }
+  })
 
   // Cloud fields
   ;($('cloudEnabled') as HTMLInputElement).checked = settings.cloud.enabled
@@ -477,10 +487,13 @@ function applyStatus(status: AgentStatus): void {
 
   $('statusText').textContent = status.serverError
     ? 'Server not started'
-    : status.serverRunning
-      ? `Listening on 127.0.0.1:${status.serverPort}`
-      : 'Server not running'
+    : status.serverStopped
+      ? 'Server stopped'
+      : status.serverRunning
+        ? `Listening on 127.0.0.1:${status.serverPort}`
+        : 'Server not running'
   $('wsUrl').textContent = `ws://127.0.0.1:${status.serverPort || '—'}/ws`
+  ;($('toggleServer') as HTMLButtonElement).textContent = status.serverRunning ? 'Stop' : 'Start'
 
   const pill = $('cloudPill')
   pill.textContent = cloud
@@ -491,6 +504,9 @@ function applyStatus(status: AgentStatus): void {
   if (status.serverError) {
     srv.textContent = '✗ not started — ' + status.serverError
     srv.className = 'bad'
+  } else if (status.serverStopped) {
+    srv.textContent = '■ stopped'
+    srv.className = 'muted'
   } else if (status.serverRunning) {
     srv.textContent = `✓ 127.0.0.1:${status.serverPort}`
     srv.className = 'ok'

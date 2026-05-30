@@ -25,6 +25,7 @@ export const IPC = {
   getStatus: 'status:get',
   restartCloud: 'cloud:restart',
   restartServer: 'server:restart',
+  stopServer: 'server:stop',
   getQueue: 'queue:get',
   cancelJob: 'queue:cancel',
   retryJob: 'queue:retry',
@@ -57,6 +58,8 @@ export interface AgentStatus {
   serverRunning: boolean
   /** Set when the local server failed to start (e.g. all ports busy). */
   serverError?: string
+  /** True when the user explicitly stopped serving (distinct from an error). */
+  serverStopped?: boolean
   cloud: { state: string; detail?: string }
   paused: boolean
 }
@@ -120,6 +123,7 @@ export interface AgentBridge {
   getStatus(): Promise<AgentStatus>
   restartCloud(): Promise<void>
   restartServer(): Promise<void>
+  stopServer(): Promise<void>
   getQueue(): Promise<QueueSnapshot>
   cancelJob(id: string): Promise<void>
   retryJob(id: string): Promise<void>

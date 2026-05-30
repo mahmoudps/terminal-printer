@@ -20,6 +20,7 @@ const log = scoped('main')
 
 let ctx: AppContext
 let serverError: string | null = null
+let serverStoppedByUser = false // user pressed Stop (distinct from a bind error)
 
 function notify(body: string): void {
   try {
@@ -43,6 +44,7 @@ function getStatus(store: ConfigStore, server: LocalServer, cloud: CloudClient):
     serverPort: server.port,
     serverRunning: server.running,
     serverError: serverError ?? undefined,
+    serverStopped: serverStoppedByUser,
     cloud: cloud.currentState,
     paused: s.paused,
   }
@@ -123,12 +125,21 @@ async function bootstrap(): Promise<void> {
     cloud,
     registry,
     restartServer: async () => {
+      serverStoppedByUser = false // the user wants it running
       try {
         await server.start(portList(store.get().localPort))
         serverError = null
       } catch (err) {
         serverError = String(err)
       }
+      refreshTray(ctx)
+      broadcastStatus()
+    },
+    stopServer: async () => {
+      await server.stop()
+      serverStoppedByUser = true
+      serverError = null
+      log.info('local server stopped by user')
       refreshTray(ctx)
       broadcastStatus()
     },

@@ -16,6 +16,7 @@ const bridge: AgentBridge = {
   getStatus: () => ipcRenderer.invoke(IPC.getStatus),
   restartCloud: () => ipcRenderer.invoke(IPC.restartCloud),
   restartServer: () => ipcRenderer.invoke(IPC.restartServer),
+  stopServer: () => ipcRenderer.invoke(IPC.stopServer),
   getQueue: () => ipcRenderer.invoke(IPC.getQueue),
   cancelJob: (id: string) => ipcRenderer.invoke(IPC.cancelJob, id),
   retryJob: (id: string) => ipcRenderer.invoke(IPC.retryJob, id),

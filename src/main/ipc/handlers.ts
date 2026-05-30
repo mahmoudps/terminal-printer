@@ -44,6 +44,7 @@ export function registerIpc(ctx: AppContext): void {
   ipcMain.handle(IPC.getStatus, () => ctx.getStatus())
   ipcMain.handle(IPC.restartCloud, () => ctx.cloud.restart())
   ipcMain.handle(IPC.restartServer, () => ctx.restartServer())
+  ipcMain.handle(IPC.stopServer, () => ctx.stopServer())
 
   ipcMain.handle(IPC.getQueue, () => ctx.engine.snapshot())
   ipcMain.handle(IPC.cancelJob, (_e, id: string) => ctx.engine.cancel(id))

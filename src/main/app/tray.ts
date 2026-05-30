@@ -45,10 +45,12 @@ function rebuild(ctx: AppContext): void {
   const s = ctx.store.get()
   const cloud = ctx.cloud.currentState
   const q = ctx.engine.queueCounts()
-  const serverError = ctx.getStatus().serverError
-  const statusLine = serverError
+  const status = ctx.getStatus()
+  const statusLine = status.serverError
     ? 'Server: NOT STARTED — open Settings'
-    : `Local :${ctx.server.port || '—'}   •   Cloud: ${s.cloud.enabled ? cloud.state : 'off'}`
+    : status.serverStopped
+      ? 'Server: stopped'
+      : `Local :${ctx.server.port || '—'}   •   Cloud: ${s.cloud.enabled ? cloud.state : 'off'}`
   const queueLine = `Queue: ${q.active} active / ${q.queued} queued`
 
   const menu = Menu.buildFromTemplate([
@@ -77,6 +79,11 @@ function rebuild(ctx: AppContext): void {
           ctx.broadcastStatus()
         })
       },
+    },
+    {
+      label: status.serverRunning ? 'Stop serving' : 'Start serving',
+      toolTip: 'Unbind / re-bind the local print server (the app stays in the tray)',
+      click: () => void (status.serverRunning ? ctx.stopServer() : ctx.restartServer()),
     },
     { type: 'separator' },
     {
