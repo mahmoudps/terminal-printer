@@ -20,6 +20,10 @@ export const IPC = {
   setCloud: 'cloud:set',
   listPrinters: 'printers:list',
   testPrint: 'print:test',
+  testPrintTo: 'print:testTo',
+  setDefaultPrinter: 'printers:setDefault',
+  runDiagnostics: 'diag:run',
+  getHealth: 'health:get',
   listPairings: 'pairings:list',
   revokePairing: 'pairings:revoke',
   getStatus: 'status:get',
@@ -62,6 +66,40 @@ export interface AgentStatus {
   serverStopped?: boolean
   cloud: { state: string; detail?: string }
   paused: boolean
+}
+
+/** One diagnostic check result in the "doctor" report. */
+export interface DiagCheck {
+  id: string
+  label: string
+  status: 'pass' | 'warn' | 'fail'
+  detail: string
+  hint?: string
+}
+
+/** Full self-diagnosis report (GUI panel, /diagnostics endpoint, CLI). */
+export interface DiagReport {
+  generatedAt: number
+  version: string
+  platform: string
+  arch: string
+  summary: { pass: number; warn: number; fail: number }
+  checks: DiagCheck[]
+  printers: PrinterInfo[]
+  defaultPrinter: string | null
+}
+
+/** Lifetime print-health counters for the Overview card. */
+export interface HealthStats {
+  uptimeMs: number
+  total: number
+  printed: number
+  failed: number
+  successRate: number
+  queuedNow: number
+  activeNow: number
+  lastError?: string
+  lastJobAt?: number
 }
 
 export type QueueState = 'queued' | 'printing' | 'done' | 'failed' | 'canceled'
@@ -120,6 +158,10 @@ export interface AgentBridge {
   setCloud(patch: Partial<CloudSettings>): Promise<AgentSettings>
   listPrinters(): Promise<PrinterInfo[]>
   testPrint(type: JobType): Promise<JobResult>
+  testPrintTo(printer: string | null, type: JobType): Promise<JobResult>
+  setDefaultPrinter(name: string | null): Promise<AgentSettings>
+  runDiagnostics(): Promise<DiagReport>
+  getHealth(): Promise<HealthStats>
   getStatus(): Promise<AgentStatus>
   restartCloud(): Promise<void>
   restartServer(): Promise<void>

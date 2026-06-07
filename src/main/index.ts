@@ -7,6 +7,7 @@ import { ConfigStore } from './config/store'
 import { PrintEngine } from './printing'
 import { schedulePersist, loadQueue, flushQueuePersist } from './printing/persist'
 import { runTestPrint } from './printing/test-content'
+import { runDoctor } from './diagnostics/doctor'
 import { WebsiteRegistry } from './websites/registry'
 import { NonceCache } from './security/nonce'
 import { LocalServer } from './server'
@@ -60,7 +61,7 @@ async function bootstrap(): Promise<void> {
   const registry = new WebsiteRegistry()
   await registry.load()
   const nonces = new NonceCache()
-  const server = new LocalServer({ engine, registry, nonces, store })
+  const server = new LocalServer({ engine, registry, nonces, store, getDiagnostics: () => ctx.runDiagnostics() })
   engine.onJobDone = (origin, job) => registry.recordJob(origin, job)
 
   const sendToSettings = (channel: string, payload: unknown): void => {
@@ -181,6 +182,24 @@ async function bootstrap(): Promise<void> {
       }
     },
     testPrint: (type) => runTestPrint(engine, type),
+    runDiagnostics: () => {
+      const counts = engine.queueCounts()
+      const s = store.get()
+      return runDoctor({
+        version: app.getVersion(),
+        serverRunning: server.running,
+        serverPort: server.port,
+        serverError: serverError ?? undefined,
+        serverStopped: serverStoppedByUser,
+        defaultPrinter: s.defaultPrinter,
+        cloudEnabled: s.cloud.enabled,
+        cloudState: cloud.currentState.state,
+        queued: counts.queued,
+        active: counts.active,
+        listPrinters: () => engine.listPrinters(),
+      })
+    },
+    getHealth: () => engine.getStats(),
     setStartOnLogin: async (open) => {
       applyLoginItem(open)
       await store.update({ startOnLogin: open })

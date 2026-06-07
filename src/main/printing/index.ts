@@ -1,5 +1,5 @@
 import type { AgentSettings, JobResult, JobType, PrintJob, PrinterInfo, WebsiteJob } from '@shared/types'
-import type { QueueSnapshot } from '@shared/ipc'
+import type { HealthStats, QueueSnapshot } from '@shared/ipc'
 import { PROTOCOL_VERSION } from '@shared/constants'
 import { scoped } from '../util/log'
 import { removeQuietly } from '../util/paths'
@@ -34,6 +34,32 @@ export class PrintEngine {
   readonly queue: PrintQueue
   /** Called when a job reaches a terminal state, for per-website history. */
   onJobDone?: (origin: string | undefined, job: WebsiteJob) => void
+
+  /** Lifetime counters for the Health card / diagnostics. */
+  private readonly stats = {
+    startedAt: Date.now(),
+    total: 0,
+    printed: 0,
+    failed: 0,
+    lastError: undefined as string | undefined,
+    lastJobAt: undefined as number | undefined,
+  }
+
+  getStats(): HealthStats {
+    const counts = this.queue.counts()
+    const total = this.stats.total
+    return {
+      uptimeMs: Date.now() - this.stats.startedAt,
+      total,
+      printed: this.stats.printed,
+      failed: this.stats.failed,
+      successRate: total ? this.stats.printed / total : 1,
+      queuedNow: counts.queued,
+      activeNow: counts.active,
+      lastError: this.stats.lastError,
+      lastJobAt: this.stats.lastJobAt,
+    }
+  }
 
   constructor(
     private readonly getSettings: () => AgentSettings,
@@ -85,6 +111,15 @@ export class PrintEngine {
       printerName ??
       (job.printer?.host ? `net:${job.printer.host}:${job.printer.port ?? 9100}` : 'os-default')
     const promise = this.queue.add({ job, origin, printerName, printerKey })
+    void promise.then((result) => {
+      this.stats.total++
+      if (result.status === 'printed') this.stats.printed++
+      else {
+        this.stats.failed++
+        this.stats.lastError = result.error
+      }
+      this.stats.lastJobAt = Date.now()
+    })
     if (this.onJobDone) {
       void promise.then((result) =>
         this.onJobDone?.(origin, {

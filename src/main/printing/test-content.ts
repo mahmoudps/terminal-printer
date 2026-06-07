@@ -34,12 +34,23 @@ const TEST_RECEIPT_TEXT = [
 // ZPL label: a box with "TEST".
 const TEST_ZPL = '^XA^CF0,60^FO50,50^FDTEST LABEL^FS^FO50,130^GB300,3,3^FS^XZ'
 
-/** Build and enqueue a built-in test job for the given format. */
+/** Build and enqueue a built-in test job for the given format (mapped/default printer). */
 export async function runTestPrint(engine: PrintEngine, type: JobType): Promise<JobResult> {
+  return runTestPrintTo(engine, type, null)
+}
+
+/** Build and enqueue a built-in test job, optionally targeting a specific printer. */
+export async function runTestPrintTo(
+  engine: PrintEngine,
+  type: JobType,
+  printerName: string | null,
+): Promise<JobResult> {
   const payload: { pdf?: string; image?: string } = {}
   if (type === 'pdf') payload.pdf = (await buildTestPdf()).toString('base64')
   if (type === 'image') payload.image = (await buildTestImage()).toString('base64')
-  return engine.enqueue(buildTestJob(type, payload), 'test')
+  const job = buildTestJob(type, payload)
+  if (printerName) job.printer = { ...(job.printer ?? {}), name: printerName }
+  return engine.enqueue(job, 'test')
 }
 
 export function buildTestJob(type: JobType, payload: { pdf?: string; image?: string }): PrintJob {

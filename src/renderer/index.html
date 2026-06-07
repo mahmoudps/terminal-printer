@@ -56,6 +56,9 @@
         <button class="nav-item" data-section="logs">
           <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span> Logs
         </button>
+        <button class="nav-item" data-section="diagnostics">
+          <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 5 3-10 2 7h7"/></svg></span> Diagnostics <span class="nav-dot" id="navDiagDot" hidden></span>
+        </button>
         <button class="nav-item" data-section="websites">
           <span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.4 2.6 2.4 15.4 0 18M12 3c-2.4 2.6-2.4 15.4 0 18"/></svg></span> Websites <span class="nav-badge" id="navSitesBadge" hidden></span>
         </button>
@@ -93,11 +96,21 @@
               <button class="btn" data-test="raw">Raw / ZPL</button>
             </div>
           </div>
+
+          <div class="card">
+            <div class="card-head"><h2>Health</h2></div>
+            <div id="healthGrid" class="stat-grid"><p class="muted">—</p></div>
+          </div>
         </section>
 
         <!-- Printers -->
         <section class="panel" data-panel="printers">
           <div class="panel-head"><h1>Printers</h1><button class="btn" id="refreshPrinters">Refresh</button></div>
+          <div class="card">
+            <div class="card-head"><h2>Installed printers</h2></div>
+            <p class="hint">Every printer the OS exposes. Set the agent default or send a quick test page to any one.</p>
+            <div id="printerTable" class="printer-table"><p class="muted">—</p></div>
+          </div>
           <div class="card">
             <div class="field">
               <label for="defaultPrinter">Default printer</label>
@@ -168,6 +181,16 @@
         <section class="panel" data-panel="logs">
           <div class="panel-head"><h1>Logs</h1><div class="btn-row"><button class="btn" id="copyLogs">Copy</button><button class="btn" id="openLogs">Open log file</button></div></div>
           <div class="card flush"><pre id="logView" class="logview" aria-live="off"></pre></div>
+        </section>
+
+        <!-- Diagnostics -->
+        <section class="panel" data-panel="diagnostics">
+          <div class="panel-head"><h1>Diagnostics</h1><div class="btn-row"><button class="btn" id="copyDiag">Copy report</button><button class="btn primary" id="runDiag">Run checks</button></div></div>
+          <div class="card">
+            <p class="hint">A full self-check — server, printers, default target, print backend, job signing, storage, cloud, and queue. Run this whenever something won't print.</p>
+            <div id="diagSummary" class="diag-summary"></div>
+            <div id="diagBody" class="diag-list"><p class="muted">Click “Run checks” to scan.</p></div>
+          </div>
         </section>
 
         <!-- Websites -->

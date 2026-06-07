@@ -1,5 +1,5 @@
 import type { AgentSettings, PrinterInfo, JobType } from '@shared/types'
-import type { AgentStatus, QueueJobView, QueueSnapshot, WebsiteListItem, WebsiteDetail } from '@shared/ipc'
+import type { AgentStatus, DiagReport, QueueJobView, QueueSnapshot, WebsiteListItem, WebsiteDetail } from '@shared/ipc'
 
 const agent = window.agent
 
@@ -27,6 +27,7 @@ function setupNav(): void {
       for (const i of items) i.classList.toggle('is-active', i === item)
       for (const p of panels) p.classList.toggle('is-active', p.dataset.panel === section)
       document.querySelector('.content')?.scrollTo({ top: 0 })
+      if (section === 'diagnostics' && !lastDiag) void runDiagnostics()
     })
   }
 }
@@ -51,15 +52,20 @@ async function init(): Promise<void> {
   settings = await agent.getSettings()
   printers = await agent.listPrinters().catch(() => [])
   renderPrinters()
+  renderPrinterTable()
   bindControls()
   renderWebsitesList(await agent.getWebsites())
   agent.onWebsites(renderWebsitesList)
   renderQueue(await agent.getQueue())
-  agent.onQueue(renderQueue)
+  agent.onQueue((s) => {
+    renderQueue(s)
+    void renderHealth()
+  })
   renderLogs(await agent.getLogs())
   agent.onLog(appendLogs)
   applyStatus(await agent.getStatus())
   agent.onStatus(applyStatus)
+  void renderHealth()
 }
 
 /* ---------- printers ---------- */
@@ -103,12 +109,63 @@ async function savePrinterMap(): Promise<void> {
   toast('Printer mapping saved')
 }
 
+function renderPrinterTable(): void {
+  const c = $('printerTable')
+  if (!printers.length) {
+    c.innerHTML = '<p class="muted">No printers found. Connect one, or use network transport for thermal printers.</p>'
+    return
+  }
+  c.innerHTML = ''
+  for (const p of printers) {
+    const isAgentDefault = settings.defaultPrinter
+      ? settings.defaultPrinter === p.name
+      : p.isDefault
+    const row = document.createElement('div')
+    row.className = 'printer-row'
+
+    const info = document.createElement('div')
+    info.className = 'printer-name'
+    info.innerHTML =
+      `<span>${escapeHtml(p.displayName || p.name)}</span>` +
+      (isAgentDefault ? '<span class="badge">default</span>' : '') +
+      (p.isDefault ? '<span class="badge subtle">OS</span>' : '')
+
+    const actions = document.createElement('div')
+    actions.className = 'printer-actions'
+    const setBtn = makeBtn('Set default', async () => {
+      settings = await agent.setDefaultPrinter(p.name)
+      renderPrinters()
+      renderPrinterTable()
+      toast('Default printer: ' + (p.displayName || p.name))
+    })
+    setBtn.disabled = isAgentDefault
+    const testBtn = makeBtn('Test', async () => {
+      testBtn.disabled = true
+      try {
+        const r = await agent.testPrintTo(p.name, 'pdf')
+        toast(
+          r.status === 'printed' ? `Test sent to ${p.displayName || p.name}` : `Failed: ${r.error}`,
+          r.status === 'printed' ? 'success' : 'error',
+        )
+      } catch (e) {
+        toast(`Test failed: ${String(e)}`, 'error')
+      } finally {
+        testBtn.disabled = false
+      }
+    })
+    actions.append(setBtn, testBtn)
+    row.append(info, actions)
+    c.append(row)
+  }
+}
+
 /* ---------- controls ---------- */
 
 function bindControls(): void {
   $('refreshPrinters').addEventListener('click', async () => {
     printers = await agent.listPrinters().catch(() => [])
     renderPrinters()
+    renderPrinterTable()
     toast('Printers refreshed')
   })
 
@@ -197,7 +254,23 @@ function bindControls(): void {
   $('recheck').addEventListener('click', async () => {
     applyStatus(await agent.getStatus())
     renderQueue(await agent.getQueue())
+    void renderHealth()
     toast('Re-checked')
+  })
+
+  // Diagnostics
+  $('runDiag').addEventListener('click', () => void runDiagnostics())
+  $('copyDiag').addEventListener('click', async () => {
+    if (!lastDiag) {
+      toast('Run checks first')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(lastDiag, null, 2))
+      toast('Report copied')
+    } catch {
+      toast('Copy failed', 'error')
+    }
   })
   $('openLogs').addEventListener('click', () => agent.openLogs())
   $('copyLogs').addEventListener('click', async () => {
@@ -519,6 +592,77 @@ function applyStatus(status: AgentStatus): void {
   cl.className = cloud === 'connected' ? 'ok' : cloud === 'error' ? 'bad' : 'muted'
 
   $('navNetworkDot').hidden = !status.serverError
+}
+
+/* ---------- health + diagnostics ---------- */
+
+async function renderHealth(): Promise<void> {
+  const grid = $('healthGrid')
+  const h = await agent.getHealth().catch(() => null)
+  if (!h) {
+    grid.innerHTML = '<p class="muted">—</p>'
+    return
+  }
+  const rate = h.total ? Math.round(h.successRate * 100) : 100
+  grid.innerHTML = [
+    statCard('Uptime', fmtUptime(h.uptimeMs)),
+    statCard('Jobs', String(h.total)),
+    statCard('Printed', String(h.printed)),
+    statCard('Failed', String(h.failed)),
+    statCard('Success', rate + '%'),
+    statCard('Queue now', `${h.activeNow} / ${h.queuedNow}`),
+  ].join('')
+}
+
+function statCard(label: string, value: string): string {
+  return `<div class="stat"><span class="stat-val">${escapeHtml(value)}</span><span class="stat-label">${escapeHtml(label)}</span></div>`
+}
+
+function fmtUptime(ms: number): string {
+  const s = Math.floor(ms / 1000)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  if (h) return `${h}h ${m}m`
+  if (m) return `${m}m`
+  return `${s}s`
+}
+
+let lastDiag: DiagReport | null = null
+
+async function runDiagnostics(): Promise<void> {
+  const body = $('diagBody')
+  const summary = $('diagSummary')
+  const btn = $('runDiag') as HTMLButtonElement
+  btn.disabled = true
+  summary.innerHTML = ''
+  body.innerHTML = '<p class="muted">Running checks…</p>'
+  try {
+    const rep = await agent.runDiagnostics()
+    lastDiag = rep
+    summary.innerHTML =
+      `<span class="diag-pill pass">${rep.summary.pass} pass</span>` +
+      `<span class="diag-pill warn">${rep.summary.warn} warn</span>` +
+      `<span class="diag-pill fail">${rep.summary.fail} fail</span>` +
+      `<span class="diag-meta">${escapeHtml(rep.platform)}/${escapeHtml(rep.arch)} · v${escapeHtml(rep.version)} · ${rep.printers.length} printer(s)</span>`
+    body.innerHTML = ''
+    for (const c of rep.checks) {
+      const row = document.createElement('div')
+      row.className = 'diag-row ' + c.status
+      const icon = c.status === 'pass' ? '✓' : c.status === 'warn' ? '!' : '✗'
+      row.innerHTML =
+        `<span class="diag-ico">${icon}</span>` +
+        `<div class="diag-text"><div class="diag-label">${escapeHtml(c.label)}</div>` +
+        `<div class="diag-detail">${escapeHtml(c.detail)}</div>` +
+        (c.hint ? `<div class="diag-hint">${escapeHtml(c.hint)}</div>` : '') +
+        `</div>`
+      body.append(row)
+    }
+    $('navDiagDot').hidden = rep.summary.fail === 0
+  } catch (e) {
+    body.innerHTML = `<p class="bad">Diagnostics failed: ${escapeHtml(String(e))}</p>`
+  } finally {
+    btn.disabled = false
+  }
 }
 
 /* ---------- logs ---------- */

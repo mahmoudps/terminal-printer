@@ -40,7 +40,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, deps:
       agentId: s.agentId,
       paired: !!deps.registry.tokenFor(origin),
       paused: s.paused,
+      stats: deps.engine.getStats(),
     })
+    return
+  }
+
+  // Loopback-only, read-only self-diagnosis (used by the CLI `doctor`).
+  if (req.method === 'GET' && path === '/diagnostics') {
+    if (!deps.getDiagnostics) {
+      sendJson(res, 503, { error: 'diagnostics unavailable' })
+      return
+    }
+    sendJson(res, 200, await deps.getDiagnostics())
     return
   }
 

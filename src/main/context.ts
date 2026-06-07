@@ -1,5 +1,5 @@
 import type { JobResult, JobType } from '@shared/types'
-import type { AgentStatus } from '@shared/ipc'
+import type { AgentStatus, DiagReport, HealthStats } from '@shared/ipc'
 import type { ConfigStore } from './config/store'
 import type { PrintEngine } from './printing'
 import type { LocalServer } from './server'
@@ -24,6 +24,8 @@ export interface AppContext {
   openLogs(): void
   printFile(): Promise<void>
   testPrint(type: JobType): Promise<JobResult>
+  runDiagnostics(): Promise<DiagReport>
+  getHealth(): HealthStats
   setStartOnLogin(open: boolean): Promise<void>
   quit(): void
 }

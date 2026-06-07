@@ -2,7 +2,7 @@ import { app, ipcMain } from 'electron'
 import { IPC } from '@shared/ipc'
 import type { JobType } from '@shared/types'
 import { initLogging, getLogBuffer } from '../util/log'
-import { runTestPrint } from '../printing/test-content'
+import { runTestPrint, runTestPrintTo } from '../printing/test-content'
 import type { AppContext } from '../context'
 
 export function registerIpc(ctx: AppContext): void {
@@ -33,6 +33,16 @@ export function registerIpc(ctx: AppContext): void {
   ipcMain.handle(IPC.listPrinters, () => ctx.engine.listPrinters())
 
   ipcMain.handle(IPC.testPrint, (_e, type: JobType) => runTestPrint(ctx.engine, type))
+  ipcMain.handle(IPC.testPrintTo, (_e, printer: string | null, type: JobType) =>
+    runTestPrintTo(ctx.engine, type, printer),
+  )
+  ipcMain.handle(IPC.setDefaultPrinter, async (_e, name: string | null) => {
+    const after = await ctx.store.update({ defaultPrinter: name || null })
+    ctx.broadcastStatus()
+    return after
+  })
+  ipcMain.handle(IPC.runDiagnostics, () => ctx.runDiagnostics())
+  ipcMain.handle(IPC.getHealth, () => ctx.getHealth())
 
   ipcMain.handle(IPC.getWebsites, () => ctx.registry.list())
   ipcMain.handle(IPC.getWebsiteDetail, (_e, origin: string) => ctx.registry.detail(origin))
