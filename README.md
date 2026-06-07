@@ -30,6 +30,8 @@ Input sources per job: `url`, `base64`, inline `text`, or a local `file` path.
 
 - **Two paths:** browser → `ws://127.0.0.1:9120` (local, offline) **or** server → Reverb → agent (remote/server-initiated).
 - **Desktop direct printing:** tray → *Print a file…* sends any PDF/image straight to a printer, no browser involved.
+- **Virtual printer:** register Terminal Printer as a real **system device** so *any* desktop app (POS software, Word, the browser's normal dialog) can print through the agent — Settings → Printers → *Virtual printer* (see [`scripts/virtual-printer`](scripts/virtual-printer/)).
+- **Diagnostics & CLI:** a built-in **Doctor** (Settings → Diagnostics) plus a `terminal-printer doctor` / `status` / `printers` CLI for maintenance and support.
 - **Observable queue:** bounded parallelism (different printers print at once, each printer stays serial), per-printer isolation, automatic retry, cancel, and persistence across restarts — live in the **Queues** tab. Fan a job out to several printers with `printers: [...]`.
 - **Multi-website:** every site that connects is **auto-approved** and isolated with its **own token**; the **Websites** tab lists all sites with the **files** each printed and its **activity log**, and lets you block/revoke/regenerate. Loopback-only bind, HMAC-signed jobs, replay protection.
 - **No native build step:** RAW printing uses a PowerShell `winspool` P/Invoke on Windows and CUPS `lp` on macOS/Linux, so `npm install` needs no native build tools.

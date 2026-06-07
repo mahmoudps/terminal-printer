@@ -1,0 +1,6 @@
+# Normalize line endings. Shell scripts + the CUPS backend MUST stay LF or they
+# won't run on macOS/Linux (a CRLF shebang breaks execution).
+* text=auto
+*.sh text eol=lf
+scripts/virtual-printer/cups-backend text eol=lf
+*.ps1 text eol=crlf
