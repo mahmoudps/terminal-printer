@@ -119,6 +119,25 @@
             <p class="hint">Map document types to specific printers. Jobs without an explicit printer use these.</p>
             <div id="printerMap" class="map"></div>
           </div>
+
+          <div class="card">
+            <div class="card-head"><h2>Virtual printer <span class="badge subtle">system device</span></h2></div>
+            <p class="hint">Registers a <b>Terminal Printer (Virtual)</b> device in your OS so <b>any desktop app</b> can print to it — the agent captures the job and routes it. Ideal for POS/receipt apps that only print to a system printer.</p>
+            <div id="vpStatus" class="vp-status"><span class="muted">checking…</span></div>
+            <label class="switch"><input type="checkbox" id="vpEnabled" /><span class="track"></span> Run the capture listener</label>
+            <div class="field">
+              <label for="vpRoute">When a job is captured</label>
+              <select id="vpRoute">
+                <option value="default-printer">Print it to the default printer</option>
+                <option value="save">Save it to a file (captured folder)</option>
+              </select>
+            </div>
+            <div class="btn-row">
+              <button class="btn primary" id="vpInstall">Install system printer</button>
+              <button class="btn" id="vpRemove">Remove</button>
+            </div>
+            <p class="hint" id="vpNote" hidden></p>
+          </div>
         </section>
 
         <!-- Queue -->

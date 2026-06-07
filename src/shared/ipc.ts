@@ -24,6 +24,9 @@ export const IPC = {
   setDefaultPrinter: 'printers:setDefault',
   runDiagnostics: 'diag:run',
   getHealth: 'health:get',
+  installVirtualPrinter: 'vprinter:install',
+  removeVirtualPrinter: 'vprinter:remove',
+  getVirtualPrinterStatus: 'vprinter:status',
   listPairings: 'pairings:list',
   revokePairing: 'pairings:revoke',
   getStatus: 'status:get',
@@ -102,6 +105,22 @@ export interface HealthStats {
   lastJobAt?: number
 }
 
+/** State of the virtual ("system device") printer. */
+export interface VirtualPrinterStatus {
+  enabled: boolean
+  running: boolean
+  listenPort: number
+  route: 'default-printer' | 'save'
+  installed: boolean
+  platform: string
+}
+
+/** Result of an install/remove of the OS virtual printer. */
+export interface VirtualPrinterResult {
+  ok: boolean
+  message: string
+}
+
 export type QueueState = 'queued' | 'printing' | 'done' | 'failed' | 'canceled'
 
 /** A queue record as shown in the UI (never carries the payload). */
@@ -162,6 +181,9 @@ export interface AgentBridge {
   setDefaultPrinter(name: string | null): Promise<AgentSettings>
   runDiagnostics(): Promise<DiagReport>
   getHealth(): Promise<HealthStats>
+  installVirtualPrinter(): Promise<VirtualPrinterResult>
+  removeVirtualPrinter(): Promise<VirtualPrinterResult>
+  getVirtualPrinterStatus(): Promise<VirtualPrinterStatus>
   getStatus(): Promise<AgentStatus>
   restartCloud(): Promise<void>
   restartServer(): Promise<void>

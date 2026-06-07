@@ -1,0 +1,36 @@
+#!/bin/bash
+# Terminal Printer — CUPS backend.
+#
+# CUPS calls this for the virtual printer queue. With no arguments it advertises
+# the device (discovery); with a job it streams the spooled bytes to the agent's
+# loopback spool listener (default 127.0.0.1:9101, override with TP_SPOOL_PORT).
+#
+# Install: copy to /usr/lib/cups/backend/terminalprinter (root, mode 700) and
+#   lpadmin -p TerminalPrinter -v terminalprinter:/ -E -m raw
+HOST="127.0.0.1"
+PORT="${TP_SPOOL_PORT:-9101}"
+
+# Discovery mode (no args): tell CUPS this backend exists.
+if [ "$#" -eq 0 ]; then
+  echo 'direct terminalprinter "Unknown" "Terminal Printer (Virtual)"'
+  exit 0
+fi
+
+# Job mode: args are  job-id user title copies options [file]
+infile="$6"
+
+# Open a TCP connection to the agent (bash /dev/tcp — no nc dependency).
+if ! exec 3<>"/dev/tcp/$HOST/$PORT"; then
+  echo "ERROR: Terminal Printer agent not reachable on $HOST:$PORT" >&2
+  exit 1
+fi
+
+if [ -n "$infile" ]; then
+  cat "$infile" >&3
+else
+  cat >&3
+fi
+
+# Close the write side so the agent sees end-of-job, then finish.
+exec 3>&-
+exit 0

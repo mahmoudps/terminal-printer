@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { promises as fs } from 'node:fs'
+import { join } from 'node:path'
 import { app, shell, dialog, Notification } from 'electron'
 import { LOCAL_PORTS, PROTOCOL_VERSION } from '@shared/constants'
 import { IPC, type AgentStatus } from '@shared/ipc'
@@ -8,6 +10,8 @@ import { PrintEngine } from './printing'
 import { schedulePersist, loadQueue, flushQueuePersist } from './printing/persist'
 import { runTestPrint } from './printing/test-content'
 import { runDoctor } from './diagnostics/doctor'
+import { SpoolListener } from './spool/listener'
+import { installVirtualPrinter, removeVirtualPrinter, isVirtualPrinterInstalled } from './spool/register'
 import { WebsiteRegistry } from './websites/registry'
 import { NonceCache } from './security/nonce'
 import { LocalServer } from './server'
@@ -28,6 +32,19 @@ function notify(body: string): void {
     if (Notification.isSupported()) new Notification({ title: 'Terminal Printer', body }).show()
   } catch {
     /* notifications are best-effort */
+  }
+}
+
+/** Persist a captured virtual-printer job to userData/captured/. */
+async function saveCapture(data: Buffer): Promise<void> {
+  try {
+    const dir = join(app.getPath('userData'), 'captured')
+    await fs.mkdir(dir, { recursive: true })
+    const file = join(dir, `print-${randomUUID()}.prn`)
+    await fs.writeFile(file, data)
+    log.info(`virtual printer: saved capture ${file} (${data.length} bytes)`)
+  } catch (err) {
+    log.error('virtual printer: save capture failed:', String(err))
   }
 }
 
@@ -63,6 +80,25 @@ async function bootstrap(): Promise<void> {
   const nonces = new NonceCache()
   const server = new LocalServer({ engine, registry, nonces, store, getDiagnostics: () => ctx.runDiagnostics() })
   engine.onJobDone = (origin, job) => registry.recordJob(origin, job)
+
+  // Virtual printer: capture desktop print jobs over loopback and route them.
+  const spool = new SpoolListener((data) => {
+    const vp = store.get().virtualPrinter
+    if (vp.route === 'save') {
+      void saveCapture(data)
+      return
+    }
+    void engine.enqueue(
+      {
+        v: PROTOCOL_VERSION,
+        id: `vp-${randomUUID()}`,
+        type: 'raw',
+        source: { base64: data.toString('base64') },
+        meta: { label: 'Virtual printer job' },
+      },
+      'virtual',
+    )
+  })
 
   const sendToSettings = (channel: string, payload: unknown): void => {
     const w = getSettingsWindow()
@@ -200,6 +236,39 @@ async function bootstrap(): Promise<void> {
       })
     },
     getHealth: () => engine.getStats(),
+    applyVirtualPrinter: async () => {
+      const vp = store.get().virtualPrinter
+      try {
+        if (vp.enabled) await spool.start(vp.listenPort)
+        else await spool.stop()
+      } catch (err) {
+        log.error('virtual printer spool toggle failed:', String(err))
+      }
+      broadcastStatus()
+    },
+    installVirtualPrinter: async () => {
+      const result = await installVirtualPrinter(store.get().virtualPrinter.listenPort)
+      if (result.ok && !store.get().virtualPrinter.enabled) {
+        await store.update({ virtualPrinter: { ...store.get().virtualPrinter, enabled: true } })
+      }
+      if (store.get().virtualPrinter.enabled && !spool.running) {
+        await spool.start(store.get().virtualPrinter.listenPort).catch(() => undefined)
+      }
+      broadcastStatus()
+      return result
+    },
+    removeVirtualPrinter: () => removeVirtualPrinter(store.get().virtualPrinter.listenPort),
+    getVirtualPrinterStatus: async () => {
+      const vp = store.get().virtualPrinter
+      return {
+        enabled: vp.enabled,
+        running: spool.running,
+        listenPort: spool.boundPort || vp.listenPort,
+        route: vp.route,
+        installed: await isVirtualPrinterInstalled(),
+        platform: process.platform,
+      }
+    },
     setStartOnLogin: async (open) => {
       applyLoginItem(open)
       await store.update({ startOnLogin: open })
@@ -225,6 +294,7 @@ async function bootstrap(): Promise<void> {
   }
 
   await cloud.start()
+  await ctx.applyVirtualPrinter() // start the spool listener if the virtual printer is enabled
   refreshTray(ctx)
   broadcastStatus()
 

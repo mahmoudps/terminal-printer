@@ -269,4 +269,15 @@ export interface AgentSettings {
   persistQueue: boolean
   /** Allow jobs to print from a local file path (`source.file`). */
   allowFileSource: boolean
+  /** Virtual "Terminal Printer" OS device that captures desktop print jobs over loopback. */
+  virtualPrinter: VirtualPrinterSettings
+}
+
+export interface VirtualPrinterSettings {
+  /** Run the loopback spool listener (the agent side of the virtual printer). */
+  enabled: boolean
+  /** Loopback TCP port the OS printer's RAW port targets. */
+  listenPort: number
+  /** What to do with a captured job: re-print it to the agent's default printer, or save it to a file. */
+  route: 'default-printer' | 'save'
 }

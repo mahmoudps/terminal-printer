@@ -42,6 +42,7 @@ function defaults(): AgentSettings {
     historyLimit: 100,
     persistQueue: true,
     allowFileSource: true,
+    virtualPrinter: { enabled: false, listenPort: 9101, route: 'default-printer' },
   }
 }
 
@@ -65,6 +66,7 @@ export class ConfigStore extends EventEmitter {
         ...defaults(),
         ...parsed,
         cloud: { ...defaultCloud(), ...(parsed.cloud ?? {}) },
+        virtualPrinter: { ...defaults().virtualPrinter, ...(parsed.virtualPrinter ?? {}) },
         printerMap: { ...(parsed.printerMap ?? {}) },
         pairings: { ...(parsed.pairings ?? {}) },
         allowedOrigins: parsed.allowedOrigins ?? [],

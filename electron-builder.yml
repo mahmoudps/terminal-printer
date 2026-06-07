@@ -16,6 +16,11 @@ asar: true
 asarUnpack:
   - "**/node_modules/pdf-to-printer/**"
 
+# Virtual-printer OS-registration scripts must be real files on disk (run outside asar).
+extraResources:
+  - from: scripts/virtual-printer
+    to: virtual-printer
+
 win:
   target:
     - target: nsis

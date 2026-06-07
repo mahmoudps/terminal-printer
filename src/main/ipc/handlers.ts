@@ -16,6 +16,7 @@ export function registerIpc(ctx: AppContext): void {
       await ctx.setStartOnLogin(after.startOnLogin)
     }
     if (patch?.logLevel) initLogging(after.logLevel)
+    if (patch?.virtualPrinter) await ctx.applyVirtualPrinter() // start/stop the spool listener
     ctx.engine.kick() // apply maxConcurrent / queue setting changes immediately
     ctx.refreshTray()
     ctx.broadcastStatus()
@@ -43,6 +44,10 @@ export function registerIpc(ctx: AppContext): void {
   })
   ipcMain.handle(IPC.runDiagnostics, () => ctx.runDiagnostics())
   ipcMain.handle(IPC.getHealth, () => ctx.getHealth())
+
+  ipcMain.handle(IPC.installVirtualPrinter, () => ctx.installVirtualPrinter())
+  ipcMain.handle(IPC.removeVirtualPrinter, () => ctx.removeVirtualPrinter())
+  ipcMain.handle(IPC.getVirtualPrinterStatus, () => ctx.getVirtualPrinterStatus())
 
   ipcMain.handle(IPC.getWebsites, () => ctx.registry.list())
   ipcMain.handle(IPC.getWebsiteDetail, (_e, origin: string) => ctx.registry.detail(origin))

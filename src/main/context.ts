@@ -1,5 +1,5 @@
 import type { JobResult, JobType } from '@shared/types'
-import type { AgentStatus, DiagReport, HealthStats } from '@shared/ipc'
+import type { AgentStatus, DiagReport, HealthStats, VirtualPrinterResult, VirtualPrinterStatus } from '@shared/ipc'
 import type { ConfigStore } from './config/store'
 import type { PrintEngine } from './printing'
 import type { LocalServer } from './server'
@@ -26,6 +26,10 @@ export interface AppContext {
   testPrint(type: JobType): Promise<JobResult>
   runDiagnostics(): Promise<DiagReport>
   getHealth(): HealthStats
+  applyVirtualPrinter(): Promise<void>
+  installVirtualPrinter(): Promise<VirtualPrinterResult>
+  removeVirtualPrinter(): Promise<VirtualPrinterResult>
+  getVirtualPrinterStatus(): Promise<VirtualPrinterStatus>
   setStartOnLogin(open: boolean): Promise<void>
   quit(): void
 }

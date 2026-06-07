@@ -53,6 +53,7 @@ async function init(): Promise<void> {
   printers = await agent.listPrinters().catch(() => [])
   renderPrinters()
   renderPrinterTable()
+  void renderVirtualPrinter()
   bindControls()
   renderWebsitesList(await agent.getWebsites())
   agent.onWebsites(renderWebsitesList)
@@ -159,6 +160,23 @@ function renderPrinterTable(): void {
   }
 }
 
+async function renderVirtualPrinter(): Promise<void> {
+  const st = await agent.getVirtualPrinterStatus().catch(() => null)
+  const statusEl = $('vpStatus')
+  if (!st) {
+    statusEl.innerHTML = '<span class="muted">unavailable</span>'
+    return
+  }
+  ;($('vpEnabled') as HTMLInputElement).checked = st.enabled
+  ;($('vpRoute') as HTMLSelectElement).value = st.route
+  const run = st.running
+    ? `<span class="ok">● listening on 127.0.0.1:${st.listenPort}</span>`
+    : '<span class="muted">○ listener stopped</span>'
+  const reg = st.installed ? '<span class="ok">registered in OS</span>' : '<span class="muted">not registered</span>'
+  statusEl.innerHTML = `${run} &nbsp;·&nbsp; ${reg}`
+  ;($('vpRemove') as HTMLButtonElement).disabled = !st.installed
+}
+
 /* ---------- controls ---------- */
 
 function bindControls(): void {
@@ -172,7 +190,48 @@ function bindControls(): void {
   const defaultSel = $('defaultPrinter') as HTMLSelectElement
   defaultSel.addEventListener('change', async () => {
     settings = await agent.setSettings({ defaultPrinter: defaultSel.value || null })
+    renderPrinterTable()
     toast('Default printer saved')
+  })
+
+  // Virtual printer (system device)
+  ;($('vpEnabled') as HTMLInputElement).addEventListener('change', async (e) => {
+    const enabled = (e.target as HTMLInputElement).checked
+    settings = await agent.setSettings({ virtualPrinter: { ...settings.virtualPrinter, enabled } })
+    await renderVirtualPrinter()
+    toast(enabled ? 'Capture listener started' : 'Capture listener stopped')
+  })
+  ;($('vpRoute') as HTMLSelectElement).addEventListener('change', async (e) => {
+    const route = (e.target as HTMLSelectElement).value as 'default-printer' | 'save'
+    settings = await agent.setSettings({ virtualPrinter: { ...settings.virtualPrinter, route } })
+    toast('Saved')
+  })
+  $('vpInstall').addEventListener('click', async () => {
+    const btn = $('vpInstall') as HTMLButtonElement
+    const note = $('vpNote')
+    btn.disabled = true
+    note.hidden = false
+    note.textContent = 'Working… approve the elevation prompt if it appears.'
+    try {
+      const r = await agent.installVirtualPrinter()
+      note.textContent = r.message
+      toast(r.ok ? 'Virtual printer installed' : 'Action needed — see note', r.ok ? 'success' : 'error')
+      settings = await agent.getSettings()
+      await renderVirtualPrinter()
+    } catch (err) {
+      note.textContent = String(err)
+    } finally {
+      btn.disabled = false
+    }
+  })
+  $('vpRemove').addEventListener('click', async () => {
+    const note = $('vpNote')
+    note.hidden = false
+    note.textContent = 'Working…'
+    const r = await agent.removeVirtualPrinter()
+    note.textContent = r.message
+    toast(r.ok ? 'Virtual printer removed' : 'Action needed — see note', r.ok ? 'success' : 'error')
+    await renderVirtualPrinter()
   })
 
   const port = $('localPort') as HTMLInputElement
